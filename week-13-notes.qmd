@@ -167,7 +167,7 @@ classifier <-
 ```{r}
 f <- classifier(df, 'logistic')
 plt(f, df_new)
-#overview(df)
+#verview(f)
 ```
 
 ```{r}
@@ -290,6 +290,7 @@ overview <- function(f){
   table(predicted, actual)
 }
 ```
+
 
 ```r
 f <- regressor(df, 'svm')
