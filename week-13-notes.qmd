@@ -291,7 +291,7 @@ overview <- function(f){
 }
 ```
 
-```{r}
+```r
 f <- regressor(df, 'svm')
 plt(f, df_new)
 #overview(df)
@@ -571,3 +571,5 @@ steady/consistent decrease while the test loss flucuates more.
 
 
 ## Thursday April 13
+
+
