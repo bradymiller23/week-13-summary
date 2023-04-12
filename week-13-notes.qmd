@@ -2,699 +2,150 @@
 title: "week 13 notes"
 format: html
 ---
-## Old Stuff
-```{R}
-packages <- c(
-  "dplyr", 
-  "readr", 
-  "tidyr", 
-  "purrr", 
-  "stringr", 
-  "corrplot", 
-  "car", 
-  "caret", 
-  "torch", 
-  "nnet", 
-  "broom",
-  "torch",
-  "torchvision",
-  "e1071",
-  "glmnet",
-  "nnet",
-  "rpart",
-  "ISLR2",
-  'luz',
-  'torchvision',
-  'kableExtra',
-  'IRdisplay',
-  'repr'
-)
-
-renv::install(packages)
-sapply(packages, require, character.only=T)
-```
-
-```{r}
-ex <- \(x) ifelse(
-  ((abs(x[1]) + 0.05 * rnorm(1) > 0.50 & abs(x[2]) + 0.05 * rnorm(1) > 0.50)) |
-  ((abs(x[1]) + 0.05 * rnorm(1) < 0.25 & abs(x[2]) + 0.05 * rnorm(1) < 0.25)),1,0  
-)
-
-n <- 300
-X <- t(replicate(n, 2 * runif(2) - 1))
-y <- apply(X, 1, ex) %>% as.factor()
-col <- ifelse(y == 0, 'blue', 'red')
-df <- data.frame(y = y, x1 = X[,1], x2 = X[,2])
-plot(df$x1, df$x2, col = col, pch = 19)
-
-Xnew <- cbind(
-  rep(seq(-1.1, 1.1, length.out = 50), 50),
-  rep(seq(-1.1, 1.1, length.out = 50), each = 50)
-)
-
-df_new = data.frame(x1 = Xnew[,1], x2 = Xnew[,2])
-```
-
-
-```{r}
-Xnew <- cbind(
-  rep(seq(-1.1, 1.1, length.out = 50), 50),
-  rep(seq(-1.1, 1.1, length.out = 50), each = 50)
-)
-
-df_new = data.frame(x1=Xnew[,1], x2=Xnew[,2])
-
-plt <- function(f,x){
-  plot(x[,1], x[,2], col=ifelse(f(x) < 0.5, 'blue', 'red'), pch = 22)
-  points(df$x1, df$x2, col = ifelse(y == '0', 'blue', 'red'), pch = 19)
-}
-
-overview <- function(f){
-  predicted <- ifelse(f(df[,1]) < 0.5, 1, 0)
-  actual <- df[,1]
-  table(predicted, actual)
-}
-```
-
-###### Neural Network with 1 hidden layer
-```{r}
-p <- 2
-q <- 20
-
-hh1_module <- nn_module(
-  initialize = function() {
-    self$f <- nn_linear(p,q)
-    self$g <- nn_linear(q,1)
-    self$a <- nn_relu()
-    self$s <- nn_sigmoid()
-  },
-  forward = function(x) {
-    x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$s()
-  }
-)
-```
-
-
-###### Neural Network with 2 hidden layers
-```{r}
-p <- 2
-q1 <- 100
-q2 <- 20
-
-hh2_module <- nn_module(
-  initialize = function() {
-    self$f <- nn_linear(p,q1)
-    self$g <- nn_linear(q1,q2)
-    self$h <- nn_linear(q2,1)
-    self$a <- nn_relu()
-    self$s <- nn_sigmoid()
-  },
-  forward = function(x) {
-    x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$a() %>%
-      self$h() %>%
-      self$s()
-  }
-)
-
-```
-
-
-```{r}
-classifier <- 
-  function(train, type = 'nn', ...){
-    if(type == 'logistic'){
-      f = \(x) glm(y ~ x1 + x2, train, family = binomial()) %>%
-        predict(., x, type = 'response')
-    }
-    else if(type == 'rpart'){
-      f = \(x)
-        rpart(y ~ x1 + x2, df, method = 'class') %>%
-        predict(., x, type = 'class') %>%
-        as.numeric(.) - 1
-    }
-    else if(type == 'svm'){
-      f = \(x)
-          svm(y ~ x1 + x2, df, kernel = 'radial') %>%
-            predict(., x) %>%
-            as.numeric(.) - 1
-    }
-    else if(type == 'nn'){
-      X_tensor <- torch_tensor(train[,-1] %>% as.matrix(), dtype = torch_float())
-      y_tensor <- torch_tensor(cbind(train$y %>% as.numeric() - 1), dtype = torch_float())
-      F <- hh2_module()
-      optimizer <- optim_adam(F$parameters, lr = 0.05)
-      epochs <- 1000
-      
-      for (i in 1:epochs){
-        loss <- nn_bce_loss()(F(X_tensor), y_tensor)
-        optimizer$zero_grad()
-        loss$backward()
-        optimizer$step()
-      }
-      f = \(x) as_array(F( torch_tensor(x %>% as.matrix(), dtype = torch_float()) ))
-    }
-    return(f)
-  }
-
-```
-
-
-```{r}
-f <- classifier(df, 'logistic')
-plt(f, df_new)
-#verview(f)
-```
-
-```{r}
-f <- classifier(df, 'rpart')
-plt(f, df_new)
-#overview(df)
-```
-
-```{r}
-f <- classifier(df, 'svm')
-plt(f, df_new)
-#overview(df)
-```
-```{r}
-f <- classifier(df, 'nn')
-plt(f, df_new)
-#overview(df)
-```
-
-
-```{r}
-F <- hh1_module()
-F( torch_randn(20,2) )
-# output would be 20 by 1 tensor, that contains the sigmoid probabilities
-
-# if get rid of activation layer (reLU), output doesn't change since activation is only happening internally (will still see probability values)
-
-# if get rid of sigmoid layer, will still by 20 by 1 tensor that instead shows actual values and not probabilities (may have negative numbers)
-
-
-F <- hh2_module()
-F( torch_randn(20,2) )
-```
-
-
-
-Exponentially increasing sin wave
-```{r}
-generate_data <- function(n, noise = 0.1) {
-  x <- seq(1*pi, 1.7*pi, length.out = n)
-  y <- exp(x) * (sin(150/x) + rnorm(n, 0, noise))
-  data.frame(x = x, y = y)
-}
-
-df <- generate_data(200, noise = 0.1)
-plot(df$x, df$y, pch=19)
-```
-
-```{r}
-plt_reg <- function (f, x){
-  ynew <- f(x)
-  ylim <- range(c(ynew, df$y))
-  ylim[1] <- max(c(-800, ylim[1]))
-  ylim[2] <- min(c(250, ylim[2]))
-  xlim <-range(x)
-  plot(df$x, df$y, pch = 22, col = 'red', xlim=xlim, ylim = ylim)
-  points(x[,1], ynew, pch=22, type='l')
-}  
-```
-
-
-```{r}
-#regressor formula is same as classifier except it uses nn_mse_loss() instead of nn_bce_loss()
-
-regressor <- 
-  function(train, type = 'nn', ...){
-    if(type == 'logistic'){
-      f = \(x) glm(y ~ x1 + x2, train, family = binomial()) %>%
-        predict(., x, type = 'response')
-    }
-    else if(type == 'rpart'){
-      f = \(x)
-        rpart(y ~ x1 + x2, df, method = 'class') %>%
-        predict(., x, type = 'class') %>%
-        as.numeric(.) - 1
-    }
-    else if(type == 'svm'){
-      f = \(x)
-          svm(y ~ x1 + x2, df, kernel = 'radial') %>%
-            predict(., x) %>%
-            as.numeric(.) - 1
-    }
-    else if(type == 'nn'){
-      X_tensor <- torch_tensor(train[,-1] %>% as.matrix(), dtype = torch_float())
-      y_tensor <- torch_tensor(cbind(train$y %>% as.numeric() - 1), dtype = torch_float())
-      F <- hh2_module()
-      optimizer <- optim_adam(F$parameters, lr = 0.05)
-      epochs <- 1000
-      
-      for (i in 1:epochs){
-        loss <- nn_mse_loss()(F(X_tensor), y_tensor)
-        optimizer$zero_grad()
-        loss$backward()
-        optimizer$step()
-      }
-      f = \(x) as_array(F( torch_tensor(x %>% as.matrix(), dtype = torch_float()) ))
-    }
-    return(f)
-  }
-
-# can change learning rate to mess around with output to get different results
-```
-
-```{r}
-Xnew <- cbind(
-  rep(seq(-1.1, 1.1, length.out = 50), 50),
-  rep(seq(-1.1, 1.1, length.out = 50), each = 50)
-)
-
-df_new = data.frame(x1=Xnew[,1], x2=Xnew[,2])
-
-plt <- function(f,x){
-  plot(x[,1], x[,2], col=ifelse(f(x) < 0.5, 'blue', 'red'), pch = 22)
-  points(df$x1, df$x2, col = ifelse(y == '0', 'blue', 'red'), pch = 19)
-}
-
-overview <- function(f){
-  predicted <- ifelse(f(df[,1]) < 0.5, 1, 0)
-  actual <- df[,1]
-  table(predicted, actual)
-}
-```
-
-
-```r
-f <- regressor(df, 'svm')
-plt(f, df_new)
-#overview(df)
-```
-
-
-###### Allow for hyperparameters in the neural network 
-```{r}
-nn_model <- nn_module(
-  initialize = function(p, q1) {
-    self$f <- nn_linear(p,q1)
-    self$g <- nn_linear(q1,1)
-    self$a <- nn_relu()
-    self$s <- nn_sigmoid()
-  },
-  forward = function(x) {
-    x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$s()
-  }
-)
-
-# look at 10 row, 2 column tensor of random values
-# changing second number --> change p in the function input
-x <- torch_randn(10,2)
-x
-
-# p&q are hyperparameters
-# will optimize the weights and biases of the neural network
-nn_model(p = 2, q1 = 10)(x)
-```
-
-Creating a dataset that we can use with luz and neural network to make
-predictions with
-```{r}
-ex <- \(x) ifelse(
-  ((abs(x[1]) + 0.05 * rnorm(1) > 0.50 & abs(x[2]) + 0.05 * rnorm(1) > 0.50)) |
-  ((abs(x[1]) + 0.05 * rnorm(1) < 0.25 & abs(x[2]) + 0.05 * rnorm(1) < 0.25)),1,0  
-)
-
-n <- 300
-X <- t(replicate(n, 2 * runif(2) - 1))
-y <- apply(X, 1, ex) %>% as.factor()
-col <- ifelse(y == 0, 'blue', 'red')
-df <- data.frame(y = y, x1 = X[,1], x2 = X[,2])
-model <- glm(y ~ x1 + x2, df, family = binomial())
-plot(df$x1, df$x2, col = col, pch = 19)
-
-xnew <- cbind(
-  rep(seq(-1.1, 1.1, length.out = 50), 50),
-  rep(seq(-1.1, 1.1, length.out = 50), each = 50)
-)
-
-df_new = data.frame(x1 = xnew[,1], x2 = xnew[,2])
-```
-
-
-###### Luz Hyperparameters
-
-We can use hyperparameters to specify the inputs for the neural network so we 
-can create our own inputs/dimensions for the hidden layers
-```{r}
-nn_model <- nn_module(
-  initialize = function(p, q1, q2, q3) {
-    self$f <- nn_linear(p,q1)
-    self$g <- nn_linear(q1, q2)
-    self$h <- nn_linear(q2, q3)
-    self$i <- nn_linear(q3, 1)
-    self$a <- nn_relu()
-    self$s <- nn_sigmoid()
-  },
-  forward = function(x) {
-    x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$a() %>%
-      self$h() %>%
-      self$a() %>%
-      self$i() %>%
-      self$s()
-  }
-)
-```
-
-
-###### Luz Setup & Fit
-
-In this next section, I while show how to use luz to setup and fit the nn model
-```{r}
-nn_model %>%
-  setup(
-    loss = nn_bce_loss(),
-    optimizer = optim_adam
-  )
-```
-*Setup function takes in 2 mandatory arguments --> the loss function and the 
-optimizer (used for minmimizing loss)
-  1. optimizer could be optim_adam, optim_rmsprop, ...
-
-
-
-The code above is equivalent to...
-```r
- F <- hh2_module()
- optimizer <- optim_adam(F$parameters, lr = 0.05)
- epochs <- 1000
-      
- for (i in 1:epochs){
-    loss <- nn_mse_loss()(F(X_tensor), y_tensor)
-    optimizer$zero_grad()
-    loss$backward()
-    optimizer$step()
-    }
-```
-
-Other things we may want to specify
-
-1. Epochs
-1. Gradient descent step
-1. x,y as tensors
-1. Learning rate
-1. what p & q are
-
-
-These things listed above are now added/specified in the code below
-```{r}
-fit_nn <- nn_model %>%
-  setup(
-    loss = nn_bce_loss(),
-    optimizer = optim_adam
-  ) %>%
-  set_hparams(p = 2, q1 = 5, q2 = 7, q3 = 5) %>%
-  set_opt_hparams(lr = 0.02) %>%
-  # Fit the neural network
-  # Have to change formatting b/c torch can only read matrices, not data frames
-  fit(
-    data = list(
-      as.matrix(df[,-1]),
-      as.numeric(df[,1]) - 1
-    ),
-    epochs = 10,
-    verbose = TRUE
-  )
-```
-
-
-```{r}
-# plots change in loss for the epochs specified
-plot(fit_nn)
-```
-Based on the plot, we can see that loss does decrease a little bit, but it 
-jumps around, both increasing and decreasing after the initial decrease.
-
-
-
-The output of the Luz allows you to use the predict function
-```{r}
-predict(fit_nn, xnew)
-```
-
-```{r}
-predict(fit_nn, cbind(rnorm(10), rnorm(10))) %>% as.array
-```
-
-
-###### Luz Validation Data and Metrics
-
-Randomly selecting the indicies of 23 rows in the data frame without replacement
-```{r}
-test_ind <- sample(1:nrow(df), 23, replace = FALSE) 
-```
-
-Using the luz code we created to validate the data
-```{r}
-fit_nn <- nn_model %>%
-  setup(
-    loss = nn_bce_loss(),
-    optimizer = optim_adam
-  ) %>%
-  set_hparams(p = 2, q1 = 5, q2 = 7, q3 = 5) %>%
-  set_opt_hparams(lr = 0.02) %>%
-  fit(
-    data = list(
-      as.matrix(df[-test_ind,-1]),
-      as.numeric(df[-test_ind,1]) - 1
-    ),
-    valid_data = list(
-      as.matrix(df[+test_ind, -1]),
-      as.numeric(df[+test_ind,1]) - 1
-    ),
-    epochs = 10,
-    verbose = TRUE
-  )
-```
-
-```{r}
-plot(fit_nn)
-```
-From this plot we can see that the loss generally decreases of for the training
-data and has a greater loss value than the test data throughout the epochs, but 
-the test data switches between increasing and decreasing as the number of epochs
-increases.
-
-
-
-* Luz has built in metrics(ex. accuracy, mse, ...) some of which are shown below
-```{r}
-predicted <- torch_randn(100)
-expected <- torch_randn(100)
-metric <- luz_metric_binary_accuracy()
-
-metric <-  metric$new()
-metric$update(predicted, expected)
-metric$compute()
-```
-
-
-This time we are specifiying the metrics we want to include, in the fitting of 
-the neural network model
-```{r}
-fit_nn <- nn_model %>%
-  setup(
-    loss = nn_bce_loss(),
-    optimizer = optim_adam,
-    # specifying metrics we want to use
-    metrics = list(
-      luz_metric_binary_accuracy(),
-      luz_metric_binary_auroc()
-    )
-  ) %>% 
-  set_hparams(p = 2, q1 = 5, q2 = 7, q3 = 5) %>%
-  set_opt_hparams(lr = 0.02) %>%
-  fit(
-    data = list(
-      as.matrix(df[-test_ind,-1]),
-      as.numeric(df[-test_ind,1]) - 1
-    ),
-    valid_data = list(
-      as.matrix(df[+test_ind, -1]),
-      as.numeric(df[+test_ind,1]) - 1
-    ),
-    epochs = 50,
-    verbose = TRUE
-  )
-```
-
-```{r}
-plot(fit_nn)
-```
-Based on the graphs, we can see that the accuracy on the test and train data 
-are both low (with test accuracy ending up lower). Also, both a relatively 
-steady at the beginning but decrease as the number of epochs gets higher. For
-the AUC value, both the train and test values end around the same value, but the 
-train AUC value is more steady towards the end of the epochs while the test AUC
-jumps around. Finally, for the loss, both the test and train data decrease a 
-significant amount of value, once again with the training loss having a more 
-steady/consistent decrease while the test loss flucuates more.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ## Tuesday April 11
 
 ```{r}
-url <- "https://web.stanford.edu/class/archive/cs/cs109/cs109.1166/stuff/titanic.csv"
-df <- read.csv(url) %>%
-  mutate_if(\(x) is.character(x), as.factor) %>%
-  mutate(y = Survived) %>%
-  select(-c(Name, Survived)) %>%
-  (\(x) {
-    names(x) <- tolower(names(x))
-    x
-  })
+packages <- c(
+    # Old packages
+    "ISLR2",
+    "dplyr",
+    "tidyr",
+    "readr",
+    "purrr",
+    "repr",
+    "tidyverse",
+    "kableExtra",
+    "IRdisplay",
+    # NEW
+    "torch",
+    "torchvision",
+    "luz"
+)
 
-df %>% head
+# renv::install(packages)
+sapply(packages, require, character.only=TRUE)
 ```
 
 
+```{r}
+url <- "https://web.stanford.edu/class/archive/cs/cs109/cs109.1166/stuff/titanic.csv"
 
-```r
-url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data"
+df <- read_csv(url) %>%
+    mutate_if(\(x) is.character(x), as.factor) %>%
+    mutate(y = Survived) %>%
+    select(-c(Name, Survived)) %>%
+    (\(x) {
+        names(x) <- tolower(names(x))
+        x
+    })
+```
 
-col_names <- c('id', 'diagnosis', paste0('feat', 1:30))
+```{r}
+# url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data"
 
-df <- read_csv(
-  url, col_names, col_types = cols()) %>%
-  select(-id) %>%
-  mutate(y = ifelse(diagnosis == "M", 1, 0)) %>%
-  select(-diagnosis)
+# col_names <- c("id", "diagnosis", paste0("feat", 1:30))
 
+# df <- read_csv(
+#         url, col_names, col_types = cols()
+#     ) %>% 
+#     select(-id) %>% 
+#     mutate(y = ifelse(diagnosis == "M", 1, 0)) %>%
+#     select(-diagnosis)
+
+
+# df %>% head
 ```
 
 ```{r}
 k <- 5
-test_ind <- sample(1:nrow(df), 
-                   floor(nrow(df) / k),
-                   replace = FALSE
-                   )
+
+test_ind <- sample(
+    1:nrow(df), 
+    floor(nrow(df) / k),
+    replace=FALSE
+)
 
 df_train <- df[-test_ind, ]
-df_test <- df[test_ind, ]
+df_test  <- df[test_ind, ]
 
+nrow(df_train) + nrow(df_test) == nrow(df)
+```
+
+```{r}
 fit_glm <- glm(
-  y ~., 
-  df_train %>% mutate_at('y', factor), 
-  family = binomial()
+    y ~ ., 
+    df_train %>% mutate_at("y", factor), 
+    family = binomial()
 )
 
 glm_test <- predict(
-  fit_glm,
-  df_test,
-  otuput = 'response'
+    fit_glm, 
+    df_test,
+    output = "response"
 )
+
 glm_preds <- ifelse(glm_test > 0.5, 1, 0)
 table(glm_preds, df_test$y)
 ```
 
-
 ```{r}
 NNet <- nn_module(
-  initialize = function(p, q1, q2, q3) {
-    self$f <- nn_linear(p,q1)
-    self$g <- nn_linear(q1, q2)
-    self$h <- nn_linear(q2, q3)
-    self$i <- nn_linear(q3, 1)
-    self$a <- nn_relu()
-    self$s <- nn_sigmoid()
+  initialize = function(p, q1, q2, q3) {  
+    self$hidden1 <- nn_linear(p, q1)
+    self$hidden2 <- nn_linear(q1, q2)
+    self$hidden3 <- nn_linear(q2, q3)
+    self$output <- nn_linear(q3, 1)
+    self$activation <- nn_relu()
+    self$sigmoid <- nn_sigmoid()
   },
+    
   forward = function(x) {
-    x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$a() %>%
-      self$h() %>%
-      self$a() %>%
-      self$i() %>%
-      self$s()
+    x %>% 
+      self$hidden1() %>% self$activation() %>% 
+      self$hidden2() %>% self$activation() %>% 
+      self$hidden3() %>% self$activation() %>% 
+      self$output() %>% self$sigmoid()
   }
 )
-
-NNet(p=2, q1=2, q2=2, q3=10)
 ```
-
 
 ```{r}
 # fitting a model without an intercept - when its zero, everything else is zero
 M <- model.matrix(y ~ 0 + ., data = df_train)
 # model.matrix(y ~ ., data = df_train) [ ,-1]
-```
 
-
-```{r}
 fit_nn <- NNet %>%
-  #
-  # setup the model
-  # 
-  setup(
-    loss = nn_bce_loss(),
-    optimizer = optim_rmsprop,
-    metrics = list(
-      luz_metric_accuracy
+    #
+    # Setup the model
+    #
+    setup(
+        loss = nn_bce_loss(),
+        optimizer = optim_adam, 
+        metrics = list(
+            luz_metric_accuracy()
+        )
+    ) %>% 
+    #
+    # Set the hyperparameters
+    #
+    set_hparams(p=ncol(M), q1=256, q2=128, q3=64) %>% 
+    set_opt_hparams(lr=0.005) %>% 
+    #
+    # Fit the model
+    #
+    fit(
+        data = list(
+            model.matrix(y ~ 0 + ., data = df_train),
+            df_train %>% select(y) %>% as.matrix
+        ),
+        valid_data = list(
+            model.matrix(y ~ 0 + ., data = df_test),
+            df_test %>% select(y) %>% as.matrix
+        ),
+        epochs = 50, 
+        verbose = TRUE
     )
-  ) %>% 
-  #
-  # set the hyperparameters
-  # 
-  set_hparams(p = ncol(df)-1, q1 = 50, q2 = 30, q3 = 20) %>%
-  set_opt_hparams(lr = 0.01) %>%
-  #
-  # fit the model
-  # 
-  fit(
-    data = list(
-      model.matrix(y ~ 0 + ., data = df_train),
-      df_train %>% select(y) %>% as.matrix
-    ),
-    valid_data = list(
-      model.matrix(y ~ 0 + ., data = df_test),
-      df_test %>% select(y) %>% as.matrix
-    ),
-    epochs = 50,
-    verbose = TRUE
-  )
 ```
 
 ```{r}
@@ -703,14 +154,29 @@ plot(fit_nn)
 
 ```{r}
 nn_test <- predict(
-  fit_nn, model.matrix(y ~ . - 1, data = df_test)
+    fit_nn, 
+    model.matrix(y ~ . - 1, data = df_test)
 )
-
-#nn_test
-
+# nn_test
 nn_preds <- ifelse(nn_test > 0.5, 1, 0)
+
 table(nn_preds, df_test$y)
 ```
+
+```{r}
+mean(nn_preds == df_test$y)
+```
+
+```{r}
+table(glm_preds, df_test$y)
+```
+
+
+```{r}
+mean(glm_preds == df_test$y)
+```
+
+
 
 
 
@@ -742,45 +208,39 @@ table(nn_preds, df_test$y)
   want to shuffle the data between every epoch
 * DataLoader takes care of these issues
 
-
 ```{r}
 dir <- "./mnist"
 
-# initializing a large dataset
-mnist_dataset2 <- torch::dataset(
-  inherit = mnist_dataset,
-  .getitem = function(i) {
-    output <- super$.getitem(i)
-    output$y <- output$x
-    output
-  }
+train_ds <- mnist_dataset(
+    root = dir,
+    train = TRUE,
+    download = TRUE,
+    transform = transform
+)
+test_ds <- mnist_dataset(
+    root = dir,
+    train = FALSE,
+    download = TRUE,
+    transform = transform
 )
 
-# downloading the test and train datasets and converts it to .rds format
-train_ds <- mnist_dataset2(
-  dir,
-  download = TRUE,
-  transform = transform
-)
-
-test_ds <- mnist_dataset2(
-  dir,
-  download = TRUE,
-  train = FALSE,
-  transform = transform
-)
 ```
+
 
 ```{r}
 typeof(train_ds)
 length(train_ds)
-
-# 42,000nd  observation is a 28x28 matrix
-# one row is a 28x28 matrix
-# is an image where a value specifies the intensity of the pixels in the 28x28 imiage
-train_ds$data[42000, ,]
 ```
 
+```{r}
+# 42,000nd  observation is a 28x28 matrix
+# one row is a 28x28 matrix
+# is an image where a value specifies the intensity of the pixels in the 28x28 image
+train_ds$data[42000, ,]
+```
+    
+
+Using the data to determine the value of a handwritten number
 ```{r}
 # collection of {x_i, y_i} where i = 1, ranging to 10000
 # x_i is 28x28 image of handwritten image
@@ -788,74 +248,109 @@ train_ds$data[42000, ,]
 options(repr.plot.width=10, repr.plot.height=10)
 
 i <- sample(1:length(train_ds), 1)
-x <- train_ds$data[i, , ] %>% t
+x <- train_ds$data[i, ,] %>% t
 
-image(x[1:28, 28:1], useRaster = TRUE, axes = FALSE, col = gray.colors(1000), 
-      main = train_ds$targets[i] - 1)
+image(x[1:28, 28:1], useRaster=TRUE, axes=FALSE, col=gray.colors(1000), main = train_ds$targets[i]-1 )
+```
+
+
+Displaying multiple handwritten digits and their respective prediction
+```{r}
+options(repr.plot.width = 10, repr.plot.height = 10)
+par(mfrow=c(3,3))
+
+for(iter in 1:9){
+    i <- sample(1:length(train_ds), 1)
+    x <- train_ds$data[i, ,] %>% t
+    image(x[1:28, 28:1], useRaster = TRUE, axes = FALSE, col = gray.colors(1000),
+          main = train_ds$targets[i]-1)
+}
 ```
 * data frame with each row being a single image observation and its actual value
 * p (# cols) = # of pixels in width^2 so you can have column for each pixel
-* n (#)
+
+
+
 ```{r}
 # splitting up batches into size 128
 # shuffling allows to negate any bias by shuffling observations for each epoch
-train_dl <- dataloader(train_ds, batch_size = 128, shuffle =TRUE)
-test_dl <- dataloader(test_ds, batch_size = 128)
+train_dl <- dataloader(train_ds, batch_size = 1024, shuffle = TRUE)
+test_dl <- dataloader(test_ds, batch_size = 1024)
 ```
 
-
 ```{r}
-NNet <- nn_module(
-  initialize = function(p, q1, q2, q3) {
-    self$f <- nn_linear(p,q1)
-    self$g <- nn_linear(q1, q2)
-    self$OUTPUT <- nn_linear(q2, q3)
-    self$a <- nn_relu()
+NNet_10 <- nn_module(
+  initialize = function(p, q1, q2, q3, o) {
+    self$hidden1 <- nn_linear(p, q1)
+    self$hidden2 <- nn_linear(q1, q2)
+    self$hidden3 <- nn_linear(q2, q3)
+    self$OUTPUT <- nn_linear(q3, o)
+    self$activation <- nn_relu()
   },
   forward = function(x) {
     x %>%
-      self$f() %>%
-      self$a() %>%
-      self$g() %>%
-      self$a() %>%
-      self$OUTPUT() 
-    }
+      self$hidden1() %>%
+      self$activation() %>%
+      self$hidden2() %>%
+      self$activation() %>%
+      self$hidden3() %>%
+      self$activation() %>%
+      self$OUTPUT()
+  }
 )
 
-
-
-fit_nn <- NNet %>%
-  #
-  # setup the model
-  # 
-  setup(
-    loss = nn_cross_entropy_loss(),
-    optimizer = optim_adam,
-    metrics = list(
-      luz_metric_accuracy
+fit_nn <- NNet_10 %>%
+    #
+    # Setup the model
+    #
+    setup(
+        loss = nn_cross_entropy_loss(),
+        optimizer = optim_adam,
+        metrics = list(
+            luz_metric_accuracy()
+        )
+    ) %>%
+    #
+    # Set the hyperparameters
+    #
+    set_hparams(p=28*28, q1=256, q2=128, q3=64, o=10) %>% 
+    #
+    # Fit the model
+    #
+    fit(
+        epochs = 10,
+        data = train_dl,
+        valid_data = test_dl,
+        verbose=TRUE
     )
-  ) %>% 
-  #
-  # set the hyperparameters
-  # 
-  set_hparams(p = 28*28, q1 = 256, q2 = 128, q3 = 10) %>%
-  set_opt_hparams(lr = 0.01) %>%
-  #
-  # fit the model
-  # 
-  fit(
-    data = train_dl,
-    valid_data = test_dl,
-    epochs = 10,
-    verbose = TRUE
-  )
+```
 
-
-NN10_preds <- fit_nn %>%
-  predict(test_ds) %>%
+```{r}
+NN10_preds <- fit_nn %>% 
+  predict(test_ds) %>% 
   torch_argmax(dim = 2) %>%
   as_array()
 ```
+
+
+Accuracy
+```{r}
+mean(NN10_preds == test_ds$targets)
+```
+
+Confusion matrix
+```{r}
+table(NN10_preds, test_ds$targets)
+```
+
+```{r}
+caret::confusionMatrix(
+  NN10_preds %>% as.factor, 
+  test_ds$targets %>% as.factor
+)
+```
+
+
 
 
 ## Thursday April 13
