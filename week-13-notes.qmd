@@ -1,6 +1,9 @@
 ---
 title: "week 13 notes"
 format: html
+editor: 
+  markdown: 
+    wrap: 72
 ---
 
 ## Tuesday April 11
@@ -14,19 +17,18 @@ packages <- c(
     "readr",
     "purrr",
     "repr",
-    "tidyverse",
     "kableExtra",
     "IRdisplay",
     # NEW
     "torch",
     "torchvision",
-    "luz"
+    "luz",
+    "tidyverse"
 )
 
-# renv::install(packages)
+renv::install(packages)
 sapply(packages, require, character.only=TRUE)
 ```
-
 
 ```{r}
 url <- "https://web.stanford.edu/class/archive/cs/cs109/cs109.1166/stuff/titanic.csv"
@@ -171,42 +173,37 @@ mean(nn_preds == df_test$y)
 table(glm_preds, df_test$y)
 ```
 
-
 ```{r}
 mean(glm_preds == df_test$y)
 ```
 
-
-
-
-
 #### DataLoaders
 
-* key component in the ML pipeline
-* handle loading and preprocessing of data in efficient way for training and 
-  evaluating models
-* make it easy to work with large datasets (ex. dataset with trillions of bits)
-    * Loading data in smaller batches called chunks
-    
-* Advantages 
+-   key component in the ML pipeline
+-   handle loading and preprocessing of data in efficient way for
+    training and evaluating models
+-   make it easy to work with large datasets (ex. dataset with trillions
+    of bits)
+    -   Loading data in smaller batches called chunks
+-   Advantages
 
-1. Efficiency memory management
-1. Parallelism
-1. Preprocessing
-1. Flexibility
-1. Standardization
+1.  Efficiency memory management
+2.  Parallelism
+3.  Preprocessing
+4.  Flexibility
+5.  Standardization
 
-
-* involves partitioning data into smaller chunks (batches)
-* inside one large epoch of gradient descent, it'll break up the data into 
-  batches and mini gradient descents (does gradient descent on every batch)
-* IS DIFFERENT FROM CROSS VALIDATION
-* training data is split up into smaller chunks - data is being cycled through
-  during gradient descent 
-* if batches are fixed statically (first 100 are batch 1, next 100 are batch 2),
-  this is going to introduce some bias into the gradient descent process, so you
-  want to shuffle the data between every epoch
-* DataLoader takes care of these issues
+-   involves partitioning data into smaller chunks (batches)
+-   inside one large epoch of gradient descent, it'll break up the data
+    into batches and mini gradient descents (does gradient descent on
+    every batch)
+-   IS DIFFERENT FROM CROSS VALIDATION
+-   training data is split up into smaller chunks - data is being cycled
+    through during gradient descent
+-   if batches are fixed statically (first 100 are batch 1, next 100 are
+    batch 2), this is going to introduce some bias into the gradient
+    descent process, so you want to shuffle the data between every epoch
+-   DataLoader takes care of these issues
 
 ```{r}
 dir <- "./mnist"
@@ -226,7 +223,6 @@ test_ds <- mnist_dataset(
 
 ```
 
-
 ```{r}
 typeof(train_ds)
 length(train_ds)
@@ -238,23 +234,26 @@ length(train_ds)
 # is an image where a value specifies the intensity of the pixels in the 28x28 image
 train_ds$data[42000, ,]
 ```
-    
 
 Using the data to determine the value of a handwritten number
+
 ```{r}
+# multi-nomial classification with 10 classes (0,1,2,...,9)
+
 # collection of {x_i, y_i} where i = 1, ranging to 10000
 # x_i is 28x28 image of handwritten image
 # every y_i {0,1,...,9}
-options(repr.plot.width=10, repr.plot.height=10)
+options(repr.plot.width = 10, repr.plot.height = 10)
 
 i <- sample(1:length(train_ds), 1)
 x <- train_ds$data[i, ,] %>% t
 
-image(x[1:28, 28:1], useRaster=TRUE, axes=FALSE, col=gray.colors(1000), main = train_ds$targets[i]-1 )
+image(x[1:28, 28:1], useRaster = TRUE, axes = FALSE, col = gray.colors(1000),
+      main = train_ds$targets[i]-1 )
 ```
 
-
 Displaying multiple handwritten digits and their respective prediction
+
 ```{r}
 options(repr.plot.width = 10, repr.plot.height = 10)
 par(mfrow=c(3,3))
@@ -266,16 +265,17 @@ for(iter in 1:9){
           main = train_ds$targets[i]-1)
 }
 ```
-* data frame with each row being a single image observation and its actual value
-* p (# cols) = # of pixels in width^2 so you can have column for each pixel
 
-
+-   data frame with each row being a single image observation and its
+    actual value
+-   p (# cols) = \# of pixels in width\^2 so you can have column for
+    each pixel
 
 ```{r}
 # splitting up batches into size 128
 # shuffling allows to negate any bias by shuffling observations for each epoch
-train_dl <- dataloader(train_ds, batch_size = 1024, shuffle = TRUE)
-test_dl <- dataloader(test_ds, batch_size = 1024)
+train_dl <- dataloader(train_ds, batch_size = 2000, shuffle = TRUE)
+test_dl <- dataloader(test_ds, batch_size = 2000)
 ```
 
 ```{r}
@@ -304,6 +304,7 @@ fit_nn <- NNet_10 %>%
     # Setup the model
     #
     setup(
+        # bce for binary (2 classes) and cross_entropy for multi-class
         loss = nn_cross_entropy_loss(),
         optimizer = optim_adam,
         metrics = list(
@@ -313,15 +314,15 @@ fit_nn <- NNet_10 %>%
     #
     # Set the hyperparameters
     #
-    set_hparams(p=28*28, q1=256, q2=128, q3=64, o=10) %>% 
+    set_hparams(p = 28*28, q1 = 256, q2 = 128, q3 = 64, o = 10) %>% 
     #
     # Fit the model
     #
     fit(
         epochs = 10,
         data = train_dl,
-        valid_data = test_dl,
-        verbose=TRUE
+        #valid_data = test_dl,
+        verbose = TRUE
     )
 ```
 
@@ -330,15 +331,36 @@ NN10_preds <- fit_nn %>%
   predict(test_ds) %>% 
   torch_argmax(dim = 2) %>%
   as_array()
+
+NN10_preds - 1
 ```
 
+```{r}
+xs <- predict(fit_nn, test_ds) [10, ]
+probs <- exp(xs) / sum(exp(xs))
+probs
+
+
+options(repr.plot.width = 10, repr.plot.height = 10)
+
+i <- sample(1:length(train_ds), 1)
+x <- train_ds$data[10, ,] %>% t
+
+image(x[1:28, 28:1], useRaster = TRUE, axes = FALSE, col = gray.colors(1000))
+```
+
+```{r}
+probs %>% torch_argmax() - 1
+```
 
 Accuracy
+
 ```{r}
 mean(NN10_preds == test_ds$targets)
 ```
 
 Confusion matrix
+
 ```{r}
 table(NN10_preds, test_ds$targets)
 ```
@@ -350,9 +372,29 @@ caret::confusionMatrix(
 )
 ```
 
-
-
-
 ## Thursday April 13
 
+#### Unsupervised learning
 
+-   Don't have access to labelled data
+-   Don't know ground truth
+-   Identify interesting relationships between the x's
+
+1.  Dimension reduction
+
+-   can we discover subgroups of variables $X_1, X_2, ..., X_p$, which
+    behave similarly?
+-   subsetting based on how similar they are
+
+1.  clustering
+
+-   can we discover subgroups of observations 1, 2, ..., n which behave
+    similarly
+-   do for observations
+
+**Principle Component Analysis**
+
+given variables and produces low dimension representation of the dataset
+(creating lower dimension dataset)
+
+compressing data from each row/observation into 2 variables
