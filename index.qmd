@@ -231,6 +231,12 @@ mean(glm_preds == df_test$y)
 * DataLoader takes care of these issues
 
 ```{r}
+transform <- function(x) x %>%
+  torch_tensor() %>%
+  torch_flatten() %>%
+  torch_div(255)
+
+
 dir <- "./mnist"
 
 train_ds <- mnist_dataset(
@@ -314,7 +320,7 @@ NNet_10 <- nn_module(
 
 Unable to get this chunk to work as it gives error that says it can't convert
 argument: input
-```r
+```{r}
 fit_nn <- NNet_10 %>%
     #
     # Setup the model
@@ -336,14 +342,32 @@ fit_nn <- NNet_10 %>%
     fit(
         epochs = 10,
         data = train_dl,
-        valid_data = test_dl,
+        # valid_data = test_dl,
         verbose=TRUE
     )
+```
 
+```{r}
 NN10_preds <- fit_nn %>% 
   predict(test_ds) %>% 
   torch_argmax(dim = 2) %>%
   as_array()
+```
+
+```{r}
+mean(NN10_preds == test_ds$targets)
+```
+
+Table that displays what each digit is predicted as (correct predictions are on the diagonal)
+```{r}
+table(NN10_preds - 1, test_ds$targets - 1)
+```
+
+```{r}
+caret::confusionMatrix(
+  (NN10_preds - 1) %>% as.factor, 
+  (test_ds$targets - 1) %>% as.factor
+)
 ```
 
 
@@ -359,7 +383,83 @@ Include a _very brief_ summary of what you learnt in this class here.
 
 Today, I learnt the following concepts in class:
 
-1. Item 1
-1. Item 2
-1. Item 3
+1. Supervised vs Unsupervised learning
+1. Principle Component Analysis
+1. Example of PCA
 :::
+
+
+#### Supervised vs Unsupervised Learning
+
+
+###### Supervised Learning
+
+* when we have access to lablled data (given covariates and the responses)
+
+* given this data our goal had been to predict y using $X_1, X_2, \dots, X_p$ as well as understand how each $X_i$ influences the response y
+
+###### Unsupervised Learning
+
+* Don't have access to labelled data (only given observations and the covariates for each)
+* Don't know ground truth
+* Goal is to identify interesting relationships between $X_1, X_2, \dots, X_p$ which can be done through...
+
+1.  Dimension reduction
+
+-   can we discover subgroups of variables $X_1, X_2, ..., X_p$, which
+    behave similarly?
+-   subsetting based on how similar they are
+
+1.  clustering
+
+-   can we discover subgroups of observations 1, 2, ..., n which behave
+    similarly
+-   do for observations
+
+
+* Unsupervised learning is more 'popular' as it is easier to obtain unlabelled data than labeled data as this requires someone to assign the proper response variable
+
+
+#### Principle Component Analysis
+
+* PCA is one of the methods used to tackle the issue of dimension reduction
+
+* objective - given variables($X_1, X_2, ..., X_p$), PCA produces a low dimension representation of the dataset (creating lower dimension dataset)
+
+* it compresses data from each row/observation into 2 variables
+
+
+Step 1
+
+The first principle component $Z_1$ is the normalized linear combination of the features 
+$$
+Z_1 = v_{11}X_1 + v_{21}X_2 + \dots + v_{p1}X_p
+$$
+such that $Z_1$ has the largest possible variance and the sum of $v_{p,i}^2 = 1$
+
+
+Step 2
+The first principle component $Z_2$ is the normalized linear combination of the features
+$$
+Z_2 = v_{12}X_1 + v_{22}X_2 + \dots + v_{p2}X_p
+$$
+such that $V_2$ is orthogonal to $V_1$, $Z_2$ has the largest possible variance and the sum of $v_{p,2}^2 = 1$ 
+
+
+* This step occurs up until the qth principal component $Z_q$ such that $Z_q$ has the largest possible variance $V_q$ is orthogonal to span($V_1, V_2, \dots, V_{q-1}$) and $v_{p,2}^2 = 1$  
+
+
+#### Example of PCA
+
+```{r}
+data <- tibble(x1 = rnorm(100, mean = 0, sd = 1),
+               x2 = x1 + rnorm(100, mean = 0, sd = 0.1)
+               )
+
+pca <- princomp(data, cor = TRUE)
+summary(pca)
+```
+
+```{r}
+pca$loadings
+```
